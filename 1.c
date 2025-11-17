@@ -1,13 +1,17 @@
 /*
- * RVC Control Software - Version 1: Single FSM
- * Homework #7 - Structured Analysis and Design
+ * RVC 제어 소프트웨어 - Version 1: 단일 FSM
+ * Homework #7 - 구조화 분석 및 설계
  * 
- * Features:
- * - Single FSM with 5 states
- * - Handles obstacle avoidance (left priority)
- * - Dust detection and cleaning
- * - Backward movement for deadlock
- * - Pause state to prevent deadlock
+ * 특징:
+ * - 5개 상태를 가진 단일 FSM
+ * - 장애물 회피 처리 (왼쪽 우선)
+ * - 먼지 감지 및 청소
+ * - 데드락 회피를 위한 후진 동작
+ * - 데드락 방지를 위한 일시정지 상태
+ * 
+ * 참고 문서:
+ * - SA PDF p.11-13: FSM Version 1 상태 정의 및 전이
+ * - SRS PDF p.2-4: 요구사항 명세
  */
 
 #include <stdio.h>
@@ -15,68 +19,68 @@
 #include <stdbool.h>
 #include <time.h>
 
-/* ========== Type Definitions ========== */
+/* ========== 타입 정의 ========== */
 
-// FSM States
+// FSM 상태 (SA PDF p.11-12 FSM Version 1 상태 정의)
 typedef enum {
-    STATE_MOVING,
-    STATE_TURNING,
-    STATE_BACKWARDING,
-    STATE_DUST_CLEANING,
-    STATE_PAUSE
-} SystemState;
+    STATE_MOVING,        // SA PDF p.11 "Moving: 정상 전진 및 청소 중"
+    STATE_TURNING,       // SA PDF p.11 "Turning: 장애물 회피 회전 중"
+    STATE_BACKWARDING,   // SA PDF p.11 "Backwarding: 후진 중"
+    STATE_DUST_CLEANING, // SA PDF p.11 "Dust Cleaning: 먼지 집중 청소"
+    STATE_PAUSE         // SA PDF p.11 "Pause: 일시 정지"
+} SystemState;          // SRS PDF p.3 FR-2.1 "CN1/CN2 별도 FSM"
 
-// Motor Commands
+// 모터 명령 (SRS PDF p.2 "Motor_Cmd -> {Forward,...}")
 typedef enum {
-    MOTOR_FORWARD,
-    MOTOR_TURN_LEFT,
-    MOTOR_TURN_RIGHT,
-    MOTOR_BACKWARD,
-    MOTOR_STOP
-} MotorCommand;
+    MOTOR_FORWARD,      // SRS PDF p.2 "Motor_Cmd -> {Forward,...}"
+    MOTOR_TURN_LEFT,    // SRS PDF p.3 FR-3.2 "좌회전 우선 규칙"
+    MOTOR_TURN_RIGHT,   // SRS PDF p.3 FR-3.1 "좌/우 중 가용한 방향"
+    MOTOR_BACKWARD,     // SRS PDF p.3 FR-3.3 "Backward를 T_back 시간 수행"
+    MOTOR_STOP         // SA PDF p.3 문제점 "Stop 상태 Deadlock"
+} MotorCommand;         // SRS PDF p.4 DD "Motor_Cmd"
 
-// Cleaner Commands
+// 청소기 명령 (SRS PDF p.2 "Clean_Cmd -> {Off, Normal, Boost}")
 typedef enum {
-    CLEANER_OFF,
-    CLEANER_ON,
-    CLEANER_POWERUP
-} CleanerCommand;
+    CLEANER_OFF,        // SRS PDF p.2 "Clean_Cmd -> {Off, Normal, Boost}"
+    CLEANER_ON,         // SA PDF p.16 CN2 "Normal Cleaning"
+    CLEANER_POWERUP     // SA PDF p.16 "Power-Up Cleaning"
+} CleanerCommand;       // SRS PDF p.4 DD "Clean_Cmd"
 
-// Turn Direction
+// 회전 방향
 typedef enum {
     TURN_LEFT,
     TURN_RIGHT,
     TURN_NONE
 } TurnDirection;
 
-// Sensor Data Structure
+// 센서 데이터 구조 (SA PDF p.5 Event List)
 typedef struct {
-    bool front;
-    bool left;
-    bool right;
-    bool dust;
+    bool front;         // SRS PDF p.2 "Front_Obs"
+    bool left;          // SRS PDF p.2 "Left_Obs"
+    bool right;         // SRS PDF p.2 "Right_Obs"
+    bool dust;          // SRS PDF p.2 "Dust_Level", p.4 "Dust_Exist"
 } SensorData;
 
-// System Context
+// 시스템 컨텍스트
 typedef struct {
     SystemState state;
     SensorData sensors;
     MotorCommand motor_cmd;
     CleanerCommand cleaner_cmd;
-    int tick_count;
+    int tick_count;         // SRS PDF p.2 "Tick: 제어 주기"
     int state_duration;
     int dust_clean_timer;
     int backward_timer;
 } RVCContext;
 
-/* ========== Global Variables ========== */
+/* ========== 전역 변수 ========== */
 RVCContext rvc;
 
-/* ========== Sensor Interface Functions ========== */
+/* ========== 센서 인터페이스 함수 ========== */
 
 void read_front_sensor(bool *value) {
-    // Emulated: Random obstacle detection
-    *value = (rand() % 10) < 2;  // 20% chance
+    // 시뮬레이션: 랜덤 장애물 감지
+    *value = (rand() % 10) < 2;  // 20% 확률
 }
 
 void read_left_sensor(bool *value) {
@@ -88,9 +92,12 @@ void read_right_sensor(bool *value) {
 }
 
 void read_dust_sensor(bool *value) {
-    *value = (rand() % 10) < 1;  // 10% chance
+    *value = (rand() % 10) < 1;  // 10% 확률
 }
 
+// 센서 인터페이스 (SA PDF p.7 DFD Level 1 "1.0 Sensor Interface & Preprocessing")
+// SA PDF p.18-19 Process Spec 1.0
+// SRS PDF p.2 FR-1.1 "Raw 센서값을 필터링"
 void sensor_interface(SensorData *sensors) {
     read_front_sensor(&sensors->front);
     read_left_sensor(&sensors->left);
@@ -98,14 +105,19 @@ void sensor_interface(SensorData *sensors) {
     read_dust_sensor(&sensors->dust);
 }
 
-/* ========== Control Logic Functions ========== */
+/* ========== 제어 로직 함수 ========== */
 
+// 모든 방향 막힘 확인 (SA PDF p.10 DFD Level 4 "2.1.2.3 All Blocked Handler")
+// SRS PDF p.3 FR-3.3 "좌/우 모두 불가 시"
 bool all_blocked(SensorData *sensors) {
     return sensors->front && sensors->left && sensors->right;
 }
 
+// 회전 우선순위 결정 (SA PDF p.31 Process Spec 2.1.2.2 "Turning Priority Decision")
+// SRS PDF p.3 FR-3.2 "Left 우선 규칙을 적용"
+// SRS PDF p.3 "좌/우 모두 가용 시 Left 우선"
 TurnDirection decide_turn_priority(SensorData *sensors) {
-    // Left priority policy
+    // 왼쪽 우선 정책
     if (!sensors->left) {
         return TURN_LEFT;
     } else if (!sensors->right) {
@@ -115,32 +127,40 @@ TurnDirection decide_turn_priority(SensorData *sensors) {
     }
 }
 
+// FSM 실행기 (SA PDF p.7 "2.0 Control Logic & Command Generation")
+// SA PDF p.12 "FSM Version 1: 상태 전이도"
+// SRS PDF p.3 "3.3 상태기계 요구사항"
 void fsm_executor(RVCContext *ctx) {
     ctx->state_duration++;
     
     switch (ctx->state) {
-        case STATE_MOVING:
+        case STATE_MOVING:  // SA PDF p.11 "Moving: 정상 전진 및 청소 중"
+            // SA PDF p.13 상태 전이 테이블 "Moving" 행
             ctx->motor_cmd = MOTOR_FORWARD;
             ctx->cleaner_cmd = CLEANER_ON;
             
-            // Transition conditions
+            // 상태 전이 조건
             if (ctx->sensors.dust) {
+                // SRS PDF p.3 FR-5.1 "Dust_Exist 시 Boost 모드"
                 ctx->state = STATE_DUST_CLEANING;
                 ctx->dust_clean_timer = 5;  // 5 ticks
                 ctx->state_duration = 0;
                 printf("[FSM] MOVING -> DUST_CLEANING (dust detected)\n");
             } 
             else if (ctx->sensors.front) {
+                // SA PDF p.13 "Moving → Turning (Front Obstacle)"
                 ctx->state = STATE_TURNING;
                 ctx->state_duration = 0;
                 printf("[FSM] MOVING -> TURNING (front obstacle)\n");
             }
             break;
             
-        case STATE_TURNING:
+        case STATE_TURNING:  // SA PDF p.11 "Turning: 장애물 회피 회전 중"
             ctx->cleaner_cmd = CLEANER_ON;
             
             if (all_blocked(&ctx->sensors)) {
+                // SA PDF p.13 "Turning → Backwarding (All Blocked)"
+                // SRS PDF p.3 FR-3.3 "좌/우 모두 불가 시 Backward"
                 ctx->state = STATE_BACKWARDING;
                 ctx->backward_timer = 3;  // 3 ticks
                 ctx->state_duration = 0;
@@ -148,6 +168,7 @@ void fsm_executor(RVCContext *ctx) {
             } 
             else {
                 TurnDirection turn = decide_turn_priority(&ctx->sensors);
+                // SA PDF p.31 "2.1.2.2 Turning Priority Decision"
                 if (turn == TURN_LEFT) {
                     ctx->motor_cmd = MOTOR_TURN_LEFT;
                     printf("[FSM] Turning LEFT (priority)\n");
@@ -156,11 +177,12 @@ void fsm_executor(RVCContext *ctx) {
                     printf("[FSM] Turning RIGHT\n");
                 } else {
                     ctx->state = STATE_PAUSE;
+                    // SA PDF p.11 "Pause: 일시 정지 (탈출 대기)"
                     ctx->state_duration = 0;
                     printf("[FSM] TURNING -> PAUSE (no turn available)\n");
                 }
                 
-                // Return to moving after turn
+                // 회전 완료 후 이동 상태로 복귀
                 if (ctx->state_duration >= 2 && turn != TURN_NONE) {
                     ctx->state = STATE_MOVING;
                     ctx->state_duration = 0;
@@ -169,7 +191,9 @@ void fsm_executor(RVCContext *ctx) {
             }
             break;
             
-        case STATE_BACKWARDING:
+        case STATE_BACKWARDING:  // SA PDF p.11 "Backwarding: 후진 중 (전방향 막힘)"
+            // SRS PDF p.3 FR-3.3 "Backward를 T_back 시간 수행"
+            // SRS PDF p.5 "T_back=600 ms"
             ctx->motor_cmd = MOTOR_BACKWARD;
             ctx->cleaner_cmd = CLEANER_ON;
             ctx->backward_timer--;
@@ -181,7 +205,8 @@ void fsm_executor(RVCContext *ctx) {
             }
             break;
             
-        case STATE_DUST_CLEANING:
+        case STATE_DUST_CLEANING:  // SA PDF p.11 "Dust Cleaning: 먼지 집중 청소 (정지)"
+            // SRS PDF p.3 FR-5.2 "일정 시간/영역 청소 후 Normal 복귀"
             ctx->motor_cmd = MOTOR_STOP;
             ctx->cleaner_cmd = CLEANER_POWERUP;
             ctx->dust_clean_timer--;
@@ -193,11 +218,13 @@ void fsm_executor(RVCContext *ctx) {
             }
             break;
             
-        case STATE_PAUSE:
+        case STATE_PAUSE:  // SA PDF p.3 "Stop 상태 Deadlock → Pause 상태로 분리"
             ctx->motor_cmd = MOTOR_STOP;
             ctx->cleaner_cmd = CLEANER_ON;
             
-            // Deadlock escape: try backward after pause
+            // 데드락 탈출: 일시정지 후 후진 시도
+            // SRS PDF p.3 FR-4.1 "Deadlock_Suspect로 표식"
+            // SRS PDF p.3 FR-4.2 "Backward→Turn→Forward 시퀀스"
             if (ctx->state_duration >= 3) {
                 ctx->state = STATE_BACKWARDING;
                 ctx->backward_timer = 3;
@@ -208,13 +235,16 @@ void fsm_executor(RVCContext *ctx) {
     }
 }
 
-/* ========== Actuator Interface Functions ========== */
+/* ========== 액추에이터 인터페이스 함수 ========== */
 
+// 모터 제어 (SA PDF p.7 "3.0 Actuator Interface")
+// SA PDF p.22-23 Process Spec 3.0
+// SRS PDF p.2 "Motor: Motor_Cmd -> {Forward, TurnLeft...}"
 void motor_control(MotorCommand cmd) {
     const char *direction;
     switch (cmd) {
         case MOTOR_FORWARD:   direction = "MOVE_FORWARD"; break;
-        case MOTOR_TURN_LEFT: direction = "TURN_LEFT_45"; break;
+        case MOTOR_TURN_LEFT: direction = "TURN_LEFT_45"; break;  // 45도 회전
         case MOTOR_TURN_RIGHT: direction = "TURN_RIGHT_45"; break;
         case MOTOR_BACKWARD:  direction = "MOVE_BACKWARD"; break;
         case MOTOR_STOP:      direction = "STOP"; break;
@@ -223,6 +253,8 @@ void motor_control(MotorCommand cmd) {
     printf("  [MOTOR] %s\n", direction);
 }
 
+// 청소기 제어 (SA PDF p.22-23 Process Spec 3.0 "Actuator Interface")
+// SRS PDF p.2 "Cleaner: Clean_Cmd -> {Off, Normal, Boost}"
 void cleaner_control(CleanerCommand cmd) {
     const char *clean_cmd;
     switch (cmd) {
@@ -239,12 +271,13 @@ void actuator_interface(RVCContext *ctx) {
     cleaner_control(ctx->cleaner_cmd);
 }
 
-/* ========== Main Control Loop ========== */
+/* ========== 메인 제어 루프 ========== */
 
+// 시스템 초기화 (SA PDF p.20-21 Process Spec 2.0 "INITIALIZE CN1_State")
 void initialize_system() {
     srand(time(NULL));
     rvc.state = STATE_MOVING;
-    rvc.tick_count = 0;
+    rvc.tick_count = 0;  // SRS PDF p.2 "Tick: 제어 주기"
     rvc.state_duration = 0;
     rvc.dust_clean_timer = 0;
     rvc.backward_timer = 0;
@@ -266,28 +299,30 @@ void print_status(RVCContext *ctx) {
            ctx->sensors.right, ctx->sensors.dust);
 }
 
+// 메인 함수 (SA PDF p.6 "RVC Control (0)" 전체 시스템)
+// SRS PDF p.3-4 "P-1 제어주기: 50–100 ms"
 int main(void) {
     initialize_system();
     
-    // Simulation loop: 50 ticks
+    // 시뮬레이션 루프: 50 ticks
     for (int i = 0; i < 50; i++) {
         rvc.tick_count = i;
         
-        // 1. Sensor Interface
+        // 1. 센서 인터페이스 (SA PDF p.18-19 Process 1.0)
         sensor_interface(&rvc.sensors);
         
-        // 2. Control Logic (FSM)
+        // 2. 제어 로직 (FSM) (SA PDF p.20-21 Process 2.0)
         fsm_executor(&rvc);
         
-        // 3. Actuator Interface
+        // 3. 액추에이터 인터페이스 (SA PDF p.22-23 Process 3.0)
         actuator_interface(&rvc);
         
-        // 4. Status Display
+        // 4. 상태 표시
         print_status(&rvc);
         
-        // Simulate tick delay
+        // Tick 지연 시뮬레이션
         #ifndef _WIN32
-        usleep(200000);  // 200ms
+        usleep(200000);  // 200ms - SRS PDF p.3 "P-2 반응시간 ≤ 150 ms"
         #endif
     }
     
