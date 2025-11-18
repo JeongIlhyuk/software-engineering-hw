@@ -1,4 +1,4 @@
-/*
+﻿/*
  * RVC 제어 소프트웨어 - Version 2: 이중 FSM (CN1 + CN2)
  * Homework #7 - 구조화 분석 및 설계
  * 
@@ -11,6 +11,9 @@
  * 참고 문서:
  * - SA PDF p.14-16: FSM Version 2 (CN1/CN2 분리 구조)
  * - SRS PDF p.3 FR-2.1: "CN1(이동)과 CN2(청소) 별도 FSM"
+ * 
+ * 주의: 이 파일은 src2/ 폴더의 파일들을 자동으로 병합한 것입니다.
+ *       수정은 src2/ 폴더의 개별 파일에서 하세요.
  */
 
 #include <stdio.h>
@@ -96,10 +99,14 @@ typedef struct {
     bool motor_status_moving; // SA PDF p.8 "CN1 → CN2: Motor_Status"
 } RVCSystem;
 
-/* ========== 전역 변수 ========== */
+// 전역 변수
 RVCSystem rvc;
 
+
 /* ========== 센서 인터페이스 함수 ========== */
+
+
+
 
 void read_front_sensor(bool *value) {
     *value = (rand() % 10) < 2;  // 20% 장애물 확률
@@ -125,7 +132,9 @@ void sensor_interface(SensorData *sensors) {
     read_dust_sensor(&sensors->dust);
 }
 
+
 /* ========== CN1: 모터 제어 FSM ========== */
+
 
 // 모든 방향 막힘 확인
 bool all_blocked(SensorData *sensors) {
@@ -249,7 +258,9 @@ void cn1_motor_fsm(CN1_Context *cn1, SensorData *sensors, bool cleaner_trigger) 
     }
 }
 
+
 /* ========== CN2: 청소기 제어 FSM ========== */
+
 
 // CN2 청소기 FSM (SA PDF p.26-27 Process Spec 2.2 "Cleaner State Management (CN2)")
 // SRS PDF p.3 "3.3.2 CN2: Cleaner Control FSM"
@@ -289,7 +300,9 @@ void cn2_cleaner_fsm(CN2_Context *cn2, bool dust_detected, bool motor_moving) {
     }
 }
 
+
 /* ========== 제어 로직 조율 ========== */
+
 
 // 제어 로직 (SA PDF p.8 "CN 간 상호작용")
 // SRS PDF p.3 FR-2.2 "상호 인터페이스는 Cleaner_Trigger와 Motor_Status"
@@ -309,7 +322,9 @@ void control_logic(RVCSystem *sys) {
     cn2_cleaner_fsm(&sys->cn2, sys->sensors.dust, sys->motor_status_moving);
 }
 
+
 /* ========== 액추에이터 인터페이스 함수 ========== */
+
 
 // 모터 제어 (SA PDF p.7 "3.0 Actuator Interface")
 void motor_control(MotorCommand cmd) {
@@ -342,7 +357,15 @@ void actuator_interface(RVCSystem *sys) {
     cleaner_control(sys->cn2.command);
 }
 
+
 /* ========== 메인 제어 루프 ========== */
+
+
+
+
+
+// 전역 변수 정의
+RVCSystem rvc;
 
 // 시스템 초기화 (SA PDF p.20 "INITIALIZE CN1_State := Idle, CN2_State := Off")
 void initialize_system() {
@@ -428,3 +451,5 @@ int main(void) {
     
     return 0;
 }
+
+

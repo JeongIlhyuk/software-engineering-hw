@@ -1,4 +1,4 @@
-/*
+﻿/*
  * RVC 제어 소프트웨어 - Version 1: 단일 FSM
  * Homework #7 - 구조화 분석 및 설계
  * 
@@ -12,6 +12,9 @@
  * 참고 문서:
  * - SA PDF p.11-13: FSM Version 1 상태 정의 및 전이
  * - SRS PDF p.2-4: 요구사항 명세
+ * 
+ * 주의: 이 파일은 src/ 폴더의 파일들을 자동으로 병합한 것입니다.
+ *       수정은 src/ 폴더의 개별 파일에서 하세요.
  */
 
 #include <stdio.h>
@@ -73,14 +76,21 @@ typedef struct {
     int backward_timer;
 } RVCContext;
 
-/* ========== 전역 변수 ========== */
+// 전역 변수
 RVCContext rvc;
+
 
 /* ========== 센서 인터페이스 함수 ========== */
 
+
+
+
+// 실제 하드웨어 센서가 없어 제어 로직 테스트를 위해 랜덤 값 사용
+// 20% 확률로 장애물 감지
+// 실제 구현 시에는 하드웨어 센서 핀에서 값을 읽어야 함
 void read_front_sensor(bool *value) {
     // 시뮬레이션: 랜덤 장애물 감지
-    *value = (rand() % 10) < 2;  // 20% 확률
+    *value = (rand() % 10) < 2; 
 }
 
 void read_left_sensor(bool *value) {
@@ -105,7 +115,9 @@ void sensor_interface(SensorData *sensors) {
     read_dust_sensor(&sensors->dust);
 }
 
+
 /* ========== 제어 로직 함수 ========== */
+
 
 // 모든 방향 막힘 확인 (SA PDF p.10 DFD Level 4 "2.1.2.3 All Blocked Handler")
 // SRS PDF p.3 FR-3.3 "좌/우 모두 불가 시"
@@ -118,12 +130,12 @@ bool all_blocked(SensorData *sensors) {
 // SRS PDF p.3 "좌/우 모두 가용 시 Left 우선"
 TurnDirection decide_turn_priority(SensorData *sensors) {
     // 왼쪽 우선 정책
-    if (!sensors->left) {
-        return TURN_LEFT;
-    } else if (!sensors->right) {
-        return TURN_RIGHT;
-    } else {
-        return TURN_NONE;
+    if (!sensors->left) {//좌측에 장애물이 없으면
+        return TURN_LEFT;//좌측으로 회전
+    } else if (!sensors->right) {//우측에 장애물이 없으면
+        return TURN_RIGHT;//우측으로 회전
+    } else {//좌측과 우측에 장애물이 모두 있으면
+        return TURN_NONE;//회전하지 않음
     }
 }
 
@@ -131,7 +143,7 @@ TurnDirection decide_turn_priority(SensorData *sensors) {
 // SA PDF p.12 "FSM Version 1: 상태 전이도"
 // SRS PDF p.3 "3.3 상태기계 요구사항"
 void fsm_executor(RVCContext *ctx) {
-    ctx->state_duration++;
+    ctx->state_duration++;//현재 상태의 tick 수
     
     switch (ctx->state) {
         case STATE_MOVING:  // SA PDF p.11 "Moving: 정상 전진 및 청소 중"
@@ -143,8 +155,8 @@ void fsm_executor(RVCContext *ctx) {
             if (ctx->sensors.dust) {
                 // SRS PDF p.3 FR-5.1 "Dust_Exist 시 Boost 모드"
                 ctx->state = STATE_DUST_CLEANING;
-                ctx->dust_clean_timer = 5;  // 5 ticks
-                ctx->state_duration = 0;
+                ctx->dust_clean_timer = 5;  // 먼지 청소 상태를 5 tick 동안 유지
+                ctx->state_duration = 0; // 상태의 tick 수를 0으로 리셋
                 printf("[FSM] MOVING -> DUST_CLEANING (dust detected)\n");
             } 
             else if (ctx->sensors.front) {
@@ -162,7 +174,7 @@ void fsm_executor(RVCContext *ctx) {
                 // SA PDF p.13 "Turning → Backwarding (All Blocked)"
                 // SRS PDF p.3 FR-3.3 "좌/우 모두 불가 시 Backward"
                 ctx->state = STATE_BACKWARDING;
-                ctx->backward_timer = 3;  // 3 ticks
+                ctx->backward_timer = 3;  // 후진 상태를 3 tick 동안 유지
                 ctx->state_duration = 0;
                 printf("[FSM] TURNING -> BACKWARDING (all blocked)\n");
             } 
@@ -178,7 +190,7 @@ void fsm_executor(RVCContext *ctx) {
                 } else {
                     ctx->state = STATE_PAUSE;
                     // SA PDF p.11 "Pause: 일시 정지 (탈출 대기)"
-                    ctx->state_duration = 0;
+                    ctx->state_duration = 0; // 현재 상태에서 경과한 tick 수
                     printf("[FSM] TURNING -> PAUSE (no turn available)\n");
                 }
                 
@@ -213,7 +225,7 @@ void fsm_executor(RVCContext *ctx) {
             
             if (ctx->dust_clean_timer <= 0) {
                 ctx->state = STATE_MOVING;
-                ctx->state_duration = 0;
+                ctx->state_duration = 0;// 현재 상태에서 경과한 tick 수를 0으로 리셋
                 printf("[FSM] DUST_CLEANING -> MOVING (clean complete)\n");
             }
             break;
@@ -227,15 +239,17 @@ void fsm_executor(RVCContext *ctx) {
             // SRS PDF p.3 FR-4.2 "Backward→Turn→Forward 시퀀스"
             if (ctx->state_duration >= 3) {
                 ctx->state = STATE_BACKWARDING;
-                ctx->backward_timer = 3;
-                ctx->state_duration = 0;
+                ctx->backward_timer = 3;  // 후진 상태를 3 tick 동안 유지
+                ctx->state_duration = 0;// 현재 상태에서 경과한 tick 수를 0으로 리셋
                 printf("[FSM] PAUSE -> BACKWARDING (deadlock escape)\n");
             }
             break;
     }
 }
 
+
 /* ========== 액추에이터 인터페이스 함수 ========== */
+
 
 // 모터 제어 (SA PDF p.7 "3.0 Actuator Interface")
 // SA PDF p.22-23 Process Spec 3.0
@@ -271,7 +285,15 @@ void actuator_interface(RVCContext *ctx) {
     cleaner_control(ctx->cleaner_cmd);
 }
 
+
 /* ========== 메인 제어 루프 ========== */
+
+
+
+
+
+// 전역 변수 정의
+RVCContext rvc;
 
 // 시스템 초기화 (SA PDF p.20-21 Process Spec 2.0 "INITIALIZE CN1_State")
 void initialize_system() {
@@ -329,3 +351,5 @@ int main(void) {
     printf("\n=== Simulation Complete ===\n");
     return 0;
 }
+
+
